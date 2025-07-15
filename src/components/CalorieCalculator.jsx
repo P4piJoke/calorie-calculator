@@ -52,15 +52,9 @@ const CalorieCalculator = () => {
     }
   };
 
-  // const handleInputChange = (e) => {
-  //   const { name, value } = e.target;
-  //   setFormData(prev => ({
-  //     ...prev,
-  //     [name]: value
-  //   }));
-  // };
-
   const handleInputChange = (e) => {
+    setResults(null);
+    setFlippedCards({ bmr: false, tdee: false });
     const { name, value, min, max } = e.target;
 
     // Convert to number only for numeric fields
@@ -108,18 +102,28 @@ const CalorieCalculator = () => {
     };
   };
 
+  function getRestDayCoeff(trainingCoeff) {
+    if (trainingCoeff <= 1.2) return 1.2;
+    else if (trainingCoeff <= 1.375) return trainingCoeff - 0.1;
+    else if (trainingCoeff <= 1.55) return trainingCoeff - 0.15;
+    else if (trainingCoeff <= 1.725) return trainingCoeff - 0.2;
+    else if (trainingCoeff <= 1.9) return trainingCoeff - 0.35;
+    else return 1.2; // fallback
+  }
+
+  const notify = (text) => toast.error(text, {
+    position: "top-center",
+    autoClose: 2000,
+    hideProgressBar: false,
+    closeOnClick: false,
+    pauseOnHover: true,
+    draggable: true,
+    progress: undefined,
+    theme: "light",
+    transition: Bounce,
+  });
+
   const calculateCalories = () => {
-    const notify = (text) => toast.error(text, {
-      position: "top-center",
-      autoClose: 2000,
-      hideProgressBar: false,
-      closeOnClick: false,
-      pauseOnHover: true,
-      draggable: true,
-      progress: undefined,
-      theme: "light",
-      transition: Bounce,
-    });
     const { age, gender, weight, height, activityLevel, goal, macroSplit, calculationType } = formData;
 
     // Validate required fields before calculation
@@ -169,7 +173,7 @@ const CalorieCalculator = () => {
       // Exercise days: Use the selected activity level (represents training days)
       // Rest days: Use sedentary level (1.2) as baseline for non-training days
       const exerciseMultiplier = parseFloat(activityLevel);
-      const restMultiplier = 1.2; // Sedentary level for rest days
+      const restMultiplier = getRestDayCoeff(exerciseMultiplier); // Sedentary level for rest days
 
       // Calculate TDEE for each day type
       const exerciseTdee = tdee;
