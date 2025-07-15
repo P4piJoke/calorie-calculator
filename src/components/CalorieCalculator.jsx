@@ -53,6 +53,10 @@ const CalorieCalculator = () => {
   };
 
   const handleInputChange = (e) => {
+    setFormData(prev => ({
+      ...prev,
+      calculationType: 'average',
+    }));
     setResults(null);
     setFlippedCards({ bmr: false, tdee: false });
     const { name, value, min, max } = e.target;
