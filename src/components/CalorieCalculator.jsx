@@ -10,7 +10,10 @@ const CalorieCalculator = () => {
     activityLevel: '1.2',
     goal: 'maintain',
     macroSplit: 'balanced',
-    calculationType: 'average'
+    calculationType: 'average',
+    carbs: '0',
+    protein: '0',
+    fat: '0'
   });
 
   const [results, setResults] = useState(null);
@@ -34,6 +37,10 @@ const CalorieCalculator = () => {
   };
 
   const macroSplits = {
+    'customized': {
+      label: 'Customized',
+      carbs: 0.0, protein: 0.0, fat: 0.0
+    },
     'balanced': {
       label: 'Balanced (40% Carbs, 30% Protein, 30% Fat)',
       carbs: 0.4, protein: 0.3, fat: 0.3
@@ -52,29 +59,36 @@ const CalorieCalculator = () => {
     }
   };
 
-  const handleInputChange = (e) => {
-    setFormData(prev => ({
-      ...prev,
-      calculationType: 'average',
-    }));
-    setResults(null);
-    setFlippedCards({ bmr: false, tdee: false });
-    const { name, value, min, max } = e.target;
-
-    // Convert to number only for numeric fields
-    const numericFields = ['age', 'weight', 'height'];
+  const validateNumericFields = (name, target) => {
+    const { value, min, max } = target;
+    const numericFields = ['age', 'weight', 'height', 'carbs', 'protein', 'fat'];
     let newValue = value;
 
     if (numericFields.includes(name)) {
       const num = parseFloat(value);
 
       // Field-specific validation
-      if (num < min || num > max) return;
+      if (num < min || num > max) return '';
       // if ((name === 'weight' || name === 'height') && (num < 1 || num > 300)) return;
 
       // Save valid number or empty value (for clearing input)
       newValue = value === '' ? '' : num;
     }
+    return newValue;
+  }
+
+  const handleInputChange = (e) => {
+    setFormData(prev => ({
+      ...prev,
+      calculationType: 'average',
+    }));
+
+    setResults(null);
+    setFlippedCards({ bmr: false, tdee: false });
+
+    // Convert to number only for numeric fields
+    const { name } = e.target;
+    const newValue = validateNumericFields(name, e.target);
 
     setFormData((prev) => ({
       ...prev,
@@ -82,26 +96,65 @@ const CalorieCalculator = () => {
     }));
   };
 
+  const proceedMacrosValue = (weight, gender, calories, split) => {
+    let carb, fat, protein;
+    if (split.label.toLowerCase() === 'customized') {
+      protein = weight * split.protein * 4;
+      if (gender === 'male') {
+        carb = weight * split.carbs * 4;
+
+        fat = (!split.fat || parseFloat(split.fat) === 0)
+          ? calories - (protein + carb)
+          : weight * split.fat * 9;
+      }
+      else {
+        carb = (!split.carbs || parseFloat(split.carbs) === 0)
+          ? calories - (protein + fat)
+          : weight * split.carbs * 4;
+
+        fat = weight * split.fat * 9;
+      }
+    }
+    else {
+      carb = calories * split.carbs;
+      protein = calories * split.protein;
+      fat = calories * split.fat;
+    }
+    return {
+      carbCalories: carb,
+      proteinCalories: protein,
+      fatCalories: fat
+    }
+  }
+
   const calculateMacros = (calories, split) => {
-    const carbCalories = calories * split.carbs;
-    const proteinCalories = calories * split.protein;
-    const fatCalories = calories * split.fat;
+    const macrosType = split.label.toLowerCase();
+    const macrosCalories = proceedMacrosValue(formData.weight, formData.gender, calories, split);
+    if (macrosCalories.fatCalories / 9 < 50) {
+      notify('Be careful, you should consume at least 50g of fat per day.')
+    }
 
     return {
       carbs: {
-        grams: Math.round(carbCalories / 4), // 4 calories per gram
-        calories: Math.round(carbCalories),
-        percentage: Math.round(split.carbs * 100)
+        grams: Math.round(macrosCalories.carbCalories / 4), // 4 calories per gram
+        calories: Math.round(macrosCalories.carbCalories),
+        percentage: macrosType === 'customized'
+          ? Math.round(macrosCalories.carbCalories / calories * 100)
+          : Math.round(split.carbs * 100)
       },
       protein: {
-        grams: Math.round(proteinCalories / 4), // 4 calories per gram
-        calories: Math.round(proteinCalories),
-        percentage: Math.round(split.protein * 100)
+        grams: Math.round(macrosCalories.proteinCalories / 4), // 4 calories per gram
+        calories: Math.round(macrosCalories.proteinCalories),
+        percentage: macrosType === 'customized'
+          ? Math.round(macrosCalories.proteinCalories / calories * 100)
+          : Math.round(split.protein * 100)
       },
       fat: {
-        grams: Math.round(fatCalories / 9), // 9 calories per gram
-        calories: Math.round(fatCalories),
-        percentage: Math.round(split.fat * 100)
+        grams: Math.round(macrosCalories.fatCalories / 9), // 9 calories per gram
+        calories: Math.round(macrosCalories.fatCalories),
+        percentage: macrosType === 'customized'
+          ? Math.round(macrosCalories.fatCalories / calories * 100)
+          : Math.round(split.fat * 100)
       }
     };
   };
@@ -127,15 +180,43 @@ const CalorieCalculator = () => {
     transition: Bounce,
   });
 
+  const proceedCustomizedMacros = (macrosName, macrosValue, isFocused) => {
+    if (isFocused && (!macrosValue || parseFloat(macrosValue) === 0)) {
+      notify('Please fill ' + macrosName + ' coeff')
+      return false;
+    }
+    else {
+      macrosName === 'protein'
+        ? macroSplits['customized'].protein = macrosValue
+        : macrosName === 'carbs'
+          ? macroSplits['customized'].carbs = macrosValue
+          : macroSplits['customized'].fat = macrosValue;
+    }
+    return true;
+  }
+
+  const notifyOnError = (props) => {
+    if (!props.age || !props.weight || !props.height) {
+      notify('Please fill in all required fields')
+
+      return false;
+    }
+    if (props.macroSplit === 'customized') {
+      const proteinMacros = proceedCustomizedMacros('protein', props.protein, true);
+      const carbsMacros = proceedCustomizedMacros('carbs', props.carbs, props.gender === 'male');
+      const fatMacros = proceedCustomizedMacros('fat', props.fat, props.gender === 'female');
+
+      return proteinMacros && carbsMacros && fatMacros;
+    }
+    return true;
+  }
+
   const calculateCalories = () => {
     const { age, gender, weight, height, activityLevel, goal, macroSplit, calculationType } = formData;
 
     // Validate required fields before calculation
-    if (!age || !weight || !height) {
-      notify('Please fill in all required fields')
-      // alert();
-      return;
-    }
+
+    if (!notifyOnError(formData)) { return; }
 
     // Calculate BMR (Basal Metabolic Rate) using Mifflin-St Jeor Equation
     // This represents calories burned at complete rest
@@ -162,12 +243,16 @@ const CalorieCalculator = () => {
     if (calculationType === 'average') {
       // Single daily target - same calories every day
       const macros = calculateMacros(targetCalories, split);
+      const macrosCalories = macros.carbs.calories + macros.protein.calories + macros.fat.calories;
+      const calucaltedCalories = (split.label.toLowerCase() === 'customized' && macrosCalories !== targetCalories)
+        ? macrosCalories
+        : targetCalories;
 
       setResults({
         type: 'average',
         bmr: Math.round(bmr),
         tdee: Math.round(tdee),
-        targetCalories: Math.round(targetCalories),
+        targetCalories: Math.round(calucaltedCalories),
         goal: goals[goal].label,
         macros,
         splitLabel: split.label
@@ -220,7 +305,10 @@ const CalorieCalculator = () => {
       activityLevel: '1.2',
       goal: 'maintain',
       macroSplit: 'balanced',
-      calculationType: 'average'
+      calculationType: 'average',
+      carbs: '',
+      protein: '',
+      fat: ''
     });
     setResults(null);
     setFlippedCards({ bmr: false, tdee: false });
@@ -232,6 +320,12 @@ const CalorieCalculator = () => {
       [cardType]: !prev[cardType]
     }));
   };
+
+  const checkIfCustomizedChoosen = () => {
+    return formData.macroSplit !== 'customized' ||
+    (formData.gender === 'male' && (!formData.fat || parseFloat(formData.fat) === 0)) ||
+    (formData.gender === 'female' && (!formData.carbs || parseFloat(formData.carbs) === 0))
+  }
 
   const MacroCard = ({ title, macro, color }) => (
     <div className={`macro-card ${color}`}>
@@ -369,27 +463,110 @@ const CalorieCalculator = () => {
                 value={formData.macroSplit}
                 onChange={handleInputChange}
               >
-                {Object.entries(macroSplits).map(([value, { label }]) => (
-                  <option key={value} value={value}>{label}</option>
-                ))}
+                <optgroup label="User engaged">
+                  <option value="customized">{macroSplits["customized"].label}</option>
+                </optgroup>
+
+                <optgroup label="Pre-defined">
+                  {Object.entries(macroSplits)
+                    .filter(([key]) => key !== "customized")
+                    .map(([value, { label }]) => (
+                      <option key={value} value={value}>
+                        {label}
+                      </option>
+                    ))}
+                </optgroup>
               </select>
             </div>
           </div>
 
-          {formData.activityLevel !== '1.2' && (
-            <div className="form-group">
-              <label htmlFor="calculationType">Calculation Type</label>
-              <select
-                id="calculationType"
-                name="calculationType"
-                value={formData.calculationType}
-                onChange={handleInputChange}
-              >
-                <option value="average">Average Daily Intake</option>
-                <option value="split">Split: Exercise Days vs Rest Days</option>
-              </select>
+          {formData.macroSplit === 'customized' && (
+            <div className='customized-macros'>
+              <div className='macros-grid'>
+                <div className='form-group'>
+                  <label htmlFor='carbs'>Carbs *</label>
+                  <input
+                    type="number"
+                    id="carbs"
+                    name="carbs"
+                    onChange={handleInputChange}
+                    placeholder="Enter carbs coeff"
+                    value={formData.carbs}
+                    min="0"
+                    max="10"
+                    step="0.1"
+                    className='no-spinner'
+                  />
+                </div>
+                <div className='form-group'>
+                  <label htmlFor='protein'>Protein *</label>
+                  <input
+                    type="number"
+                    id="protein"
+                    name="protein"
+                    onChange={handleInputChange}
+                    placeholder="Enter protein coeff"
+                    value={formData.protein}
+                    min="0"
+                    max="5"
+                    step="0.1"
+                    className='no-spinner'
+                  />
+                </div>
+                <div className='form-group'>
+                  <label htmlFor='fat'>Fat *</label>
+                  <input
+                    type="number"
+                    id="fat"
+                    name="fat"
+                    onChange={handleInputChange}
+                    placeholder="Enter fat coeff"
+                    value={formData.fat}
+                    min="0"
+                    max="2"
+                    step="0.1"
+                    className='no-spinner'
+                  />
+                </div>
+              </div>
+
+              <div className="disclaimer">
+                {
+                  formData.gender === 'male'
+                  && (
+                    <p>
+                      <strong>Male. </strong>
+                      Left Fats coeff empty or zero to use predefined calculation formula:
+                      <br />Fat calories = Total calories - (Protein calories + Carbs calories)
+                    </p>
+                  )
+                  || (
+                    <p>
+                      <strong>Female. </strong>
+                      Left Carbs coeff empty or zero to use predefined calculation formula:
+                      <br />Carbs calories = Total calories - (Protein calories + Fat calories)
+                    </p>
+                  )
+                }
+              </div>
             </div>
           )}
+
+          {(formData.activityLevel !== '1.2'
+            && checkIfCustomizedChoosen()) && (
+              <div className="form-group">
+                <label htmlFor="calculationType">Calculation Type</label>
+                <select
+                  id="calculationType"
+                  name="calculationType"
+                  value={formData.calculationType}
+                  onChange={handleInputChange}
+                >
+                  <option value="average">Average Daily Intake</option>
+                  <option value="split">Split: Exercise Days vs Rest Days</option>
+                </select>
+              </div>
+            )}
 
           <div className="button-group">
             <button type="button" onClick={calculateCalories} className="calculate-btn">

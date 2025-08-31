@@ -550,6 +550,17 @@
   line-height: 1.5;
 }
 
+.customized-macros .disclaimer {
+  margin-top: 8px;
+  background: #fdfbf5;
+  border: 1px solid #fb8524;
+  padding: 8px 8px;
+}
+
+.customized-macros .disclaimer p {
+  color: #000000;
+}
+
 .disclaimer {
   background: #fef3cd;
   border: 1px solid #fbbf24;
